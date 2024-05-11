@@ -39,7 +39,7 @@ def Check_PNG(data):
     try:
         IEND_id = data.index(b'IEND')
         IEND_data = read_chunk(data, IEND_id)
-        if len(IEND_data) >= 0:
+        if len(IEND_data) > 0:
             print("Trailer data after IEND chunk, but not spoil the picture's pixels: {}".format(IEND_data))
     except Exception as e:
         if e == 'ValueError: substring not found':
@@ -69,7 +69,7 @@ def process_IDAT(data, IDAT_id):
     IDAT_stream = []
     while True:
         IDAT_stream.append(read_chunk(data, id))
-        chunklen = len(IDAT_stream[-1]) + 4 + 4     # len of "IDAT" + data + Checksum(4 byte)
+        chunklen = len(IDAT_stream[-1]) + 4 + 8     # len of "IDAT" + data + Checksum(4 byte) + len_of_next_chunk (4 byte)
         id += chunklen      # next id of the next chunk
         # The IDAT chunks must be consecutive in PNG file
         # If the next chunk is not IDAT, mean the previous the last IDAT chunk so break the loop
@@ -81,7 +81,6 @@ def byte2int(data):
     return int.from_bytes(data, byteorder='big')
 
 def read_IHDR(data):
-    # width, height, bitd, colort, compm, filterm, interlacem = struct.unpack('>IIBBBBB', IHDR_data)
     width = byte2int(data[:4])
     height = byte2int(data[4:8])
     bitdepth = data[8]
