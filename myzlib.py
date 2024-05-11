@@ -53,11 +53,8 @@ class HuffmanTree:
         # Read bits in huffman code from left -> right 
         # bit = 1 -> Right Node
         # bit = 0 -> Left Node
-        ## print('huff_code: ', huffman_code)
         for i in range(0, code_len):
             bit = (huffman_code >> (code_len - 1 - i)) & 1
-            #print(bit, end=" ")
-            ## print("l" if not bit else "r", end=" ")
             if bit:
                 if node.right == None:
                     node.right = Node()
@@ -67,10 +64,9 @@ class HuffmanTree:
                     node.left = Node()
                 next_node = node.left
             node = next_node
-        ## print('\n')
+
         node.symbol = alphabet
-        ## print(node.symbol, end=" ")
-        
+
 
 CLEN_CODE_ORDER = [16, 17, 18, 0, 8, 7, 9, 6, 10, 5, 11, 4, 12, 3, 13, 2, 14, 1, 15]
 
@@ -94,28 +90,29 @@ def preprocessing(r):
     bl = []
     while len(bl) < HLIT + HDIST:
         symbol = decode_symbol(r, code_length_tree)
-        if symbol <= 15:
+        if 0 <= symbol <= 15: # literal value
             bl.append(symbol)
         elif symbol == 16:
-            tmp = bl[-1]
-            repeat = r.read_bits(2) + 3
-            for i in range(repeat-1):
-                bl.append(tmp)
+            # copy the previous code length 3..6 times.
+            # the next 2 bits indicate repeat length ( 0 = 3, ..., 3 = 6 )
+            prev_code_length = bl[-1]
+            repeat_length = r.read_bits(2) + 3
+            bl.extend(prev_code_length for _ in range(repeat_length))
         elif symbol == 17:
-            tmp = bl[-1]
-            repeat = r.read_bits(3) + 3
-            for i in range(repeat-1):
-                bl.append(tmp)
+            # repeat code length 0 for 3..10 times. (3 bits of length)
+            repeat_length = r.read_bits(3) + 3
+            bl.extend(0 for _ in range(repeat_length))
         elif symbol == 18:
-            tmp = bl[-1]
-            repeat = r.read_bits(7) + 11
-            for i in range(repeat-1):
-                bl.append(tmp)
+            # repeat code length 0 for 11..138 times. (7 bits of length)
+            repeat_length = r.read_bits(7) + 11
+            bl.extend(0 for _ in range(repeat_length))
 
+    #print('bl', bl)
     # Build trees:
     literal_length_tree = build_tree(bl[:HLIT], range(286))
     distance_tree = build_tree(bl[HLIT:], range(30))
     return literal_length_tree, distance_tree
+
 
 def build_tree(bl, alphabet):
     # bl: bit lens of each symbol of each alphabet (in alphabetically order)
@@ -129,12 +126,12 @@ def build_tree(bl, alphabet):
         for j in bl:
             if j==i:
                 bl_count[i] += 1
-    ## print("bl_count: ", bl_count)
+
     base_code = [0]
     for bits in range(1, MAX_BITS+1):
         base_code.append((base_code[bits-1] + bl_count[bits-1]) * 2)
 
-    ## print(base_code)
+
     tree = HuffmanTree()
     for a, bitlen in zip(alphabet, bl):
         if bitlen == 0:
@@ -153,8 +150,78 @@ def decode_symbol(r, huffman_tree):
             node = node.right
         else:
             node = node.left
-    print("symbol:", node.symbol)
+    #print("symbol:", node.symbol)
     return node.symbol
+
+
+def inflate_block_no_compression(r, output):
+    LEN = r.read_bytes(2)
+    NLEN = r.read_bytes(2)
+    output.append(r.read_bytes(LEN))
+
+
+def inflate_block_fixed_huffman_code(r, output):
+    # Build literal/length tree
+    bl = []
+    for i in range(288):
+        if (0 <= i < 144) or (280 <= i):
+            bl.append(8)
+        elif (144 <= i < 256):
+            bl.append(9)
+        else:   #256 <= i < 279
+            bl.append(7)
+    literal_length_tree = build_tree(bl, range(286))
+
+    # Build distance tree
+    bl = []
+    bl = [5 for i in range(30)]
+    distance_tree = build_tree(bl, range(30))
+    inflate_block(r, output, literal_length_tree, distance_tree)
+
+
+def inflate_block_dynamic_huffman_code(r, output):
+    literal_length_tree, distance_tree = preprocessing(r)
+    inflate_block(r, output, literal_length_tree, distance_tree)
+
+
+EXTRA_BITS_LENGTH = [0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 2, 2, 2, 2, 3, 3, 3, 3, 4, 4, 4, 4, 5, 5, 5, 5, 0]
+SMALLEST_LENGTH = [3, 4, 5, 6, 7, 8, 9, 10, 11, 13, 15, 17, 19, 23, 27, 31, 35, 43, 51, 59, 67, 83, 99, 115, 131, 163, 195, 227, 258]
+EXTRA_BITS_DISTANCE = [0, 0, 0, 0, 1, 1, 2, 2, 3, 3, 4, 4, 5, 5, 6, 6, 7, 7, 8, 8, 9, 9, 10, 10, 11, 11, 12, 12, 13, 13]
+SMALLEST_DISTANCE = [1, 2, 3, 4, 5, 7, 9, 13, 17, 25, 33, 49, 65, 97, 129, 193, 257, 385, 513, 769, 1025, 1537, 2049, 3073, 4097, 6145, 8193, 12289, 16385, 24577]
+
+def inflate_block(r, output, literal_length_tree, distance_tree):
+    while True:
+        symbol = decode_symbol(r, literal_length_tree)
+        if symbol <= 255:
+            output.append(symbol)
+        elif symbol == 256:     # End of block
+            break
+        else:       # <length, backward distance>
+            symbol -= 257
+            length = SMALLEST_LENGTH[symbol] + r.read_bits(EXTRA_BITS_LENGTH[symbol])
+            distance = decode_symbol(r, distance_tree)
+            distance = SMALLEST_DISTANCE[distance] + r.read_bits(EXTRA_BITS_DISTANCE[distance])
+            for i in range(length):
+                output.append(output[-distance])
+                #print("out", output)
+
+
+def inflate(r):
+    output = []
+    while True:
+        BFINAL = r.read_bit()
+        BTYPE = r.read_bits(2)
+        if BTYPE == 0:
+            inflate_block_no_compression(r, output)
+        elif BTYPE == 1:
+            inflate_block_fixed_huffman_code(r, output)
+        elif BTYPE == 2:
+            inflate_block_dynamic_huffman_code(r, output)
+        else:
+            raise Exception('Reserved (Error) BTYPE: BTYPE={}'.format(BTYPE))
+        if BFINAL == 1:     # This is the last block
+            break
+    return output
 
 
 def decompress(input):
@@ -179,94 +246,9 @@ def decompress(input):
     ADLER32 = r.read_bytes(4)   # Adler-32 checksum: Checksum value of uncompressed data (excluding dictionary data)
     return bytes(output)
 
-def inflate(r):
-    output = []
-    while True:
-        BFINAL = r.read_bit()
-        BTYPE = r.read_bits(2)
-        if BTYPE == 0:
-            inflate_block_no_compression(r, output)
-        elif BTYPE == 1:
-            inflate_block_fixed_huffman_code(r, output)
-        elif BTYPE == 2:
-            inflate_block_dynamic_huffman_code(r, output)
-        else:
-            raise Exception('Reserved (Error) BTYPE: BTYPE={}'.format(BTYPE))
-        if BFINAL == 1:     # This is the last block
-            break
-    return output
 
-def inflate_block_no_compression(r, output):
-    LEN = r.read_bytes(2)
-    NLEN = r.read_bytes(2)
-    output.append(r.read_bytes(LEN))
-
-def inflate_block_fixed_huffman_code(r, output):
-    # Build literal/length tree
-    bl = []
-    for i in range(288):
-        if (0 <= i < 144) or (280 <= i):
-            bl.append(8)
-        elif (144 <= i < 256):
-            bl.append(9)
-        else:   #256 <= i < 279
-            bl.append(7)
-    #print(bl)
-    literal_length_tree = build_tree(bl, range(286))
-
-    # Build distance tree
-    bl = []
-    bl = [5 for i in range(30)]
-    distance_tree = build_tree(bl, range(30))
-    #print_tree(distance_tree.root)
-    #print(bl)
-    inflate_block(r, output, literal_length_tree, distance_tree)
-
-def print_tree(root):
-    node = root
-    while True:
-        if node.left == None and node.right == None:
-            return
-        print(node.left.symbol,'\t', node.right.symbol, '\n')
-        print_tree(node.left)
-        print_tree(node.right)
-
-def inflate_block_dynamic_huffman_code(r, output):
-    literal_length_tree, distance_tree = preprocessing(r)
-    inflate_block(r, output, literal_length_tree, distance_tree)
-
-EXTRA_BITS_LENGTH = [0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 2, 2, 2, 2, 3, 3, 3,
-        3, 4, 4, 4, 4, 5, 5, 5, 5, 0]
-SMALLEST_LENGTH = [3, 4, 5, 6, 7, 8, 9, 10, 11, 13, 15, 17, 19, 23, 27, 31, 35, 43,
-        51, 59, 67, 83, 99, 115, 131, 163, 195, 227, 258]
-EXTRA_BITS_DISTANCE = [0, 0, 0, 0, 1, 1, 2, 2, 3, 3, 4, 4, 5, 5, 6, 6, 7, 7,
-        8, 8, 9, 9, 10, 10, 11, 11, 12, 12, 13, 13]
-SMALLEST_DISTANCE = [1, 2, 3, 4, 5, 7, 9, 13, 17, 25, 33, 49, 65, 97, 129, 193, 257,
-        385, 513, 769, 1025, 1537, 2049, 3073, 4097, 6145, 8193, 12289, 16385,
-        24577]
-
-def inflate_block(r, output, literal_length_tree, distance_tree):
-    tmp = []
-    while True:
-        symbol = decode_symbol(r, literal_length_tree)
-        if symbol <= 255:
-            #tmp.append(symbol) 
-            output.append(symbol)
-        elif symbol == 256:     # End of block
-            break
-        else:       # <length, backward distance>
-            symbol -= 257
-            length = SMALLEST_LENGTH[symbol] + r.read_bits(EXTRA_BITS_LENGTH[symbol])
-            distance = decode_symbol(r, distance_tree)
-            distance = SMALLEST_DISTANCE[distance] + r.read_bits(EXTRA_BITS_DISTANCE[distance])
-            for i in range(length):
-                output.append(output[-distance])
-
-    #output.extend(tmp)
-
-
-
-import zlib
-x = zlib.compress(b'the most expensive tour trip')
-y = bytes.fromhex("08 D7 63 F8 CF C0 00 00 03 01 01 00")
-print(decompress(y)) # b'Hello World!'
+if __name__ == '__main__':
+    import zlib
+    x = zlib.compress(b'the most expensive tour trip')
+    y = b'x\x9c\xed\xd61\n\x800\x0cF\xe1\'dhO\xa1\xf7?U\x04\x8f!\xc4\xdd\xc5Ex\x1dR\xe8P(\xfc\x1fM(\xd9\x8a\x010^{~\x9c\xff\xba3\x83\x1du\x05G\x03\xca\x06\xa8\xf9\rX\xa0\x07N5\x1e"}\x80\\\x82T\xe3\x1b\xb0B\x0f\\\xdc.\x00y \x88\x92\xff\xe2\xa0\x016\xa0{@\x07\x94<\x10\x04\xd9\x00\x19P6@\x7f\x01\x1b\xf0\x00R \x1a\x9c'
+    print(decompress(y)) # b'Hello World!'
