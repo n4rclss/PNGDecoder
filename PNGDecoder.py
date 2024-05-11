@@ -170,9 +170,7 @@ if __name__ == "__main__":
     filtered_pixel_data = myzlib.decompress(IDAT_stream)
     filter_obj = Filter(width, height, bytes_per_pixel, filtered_pixel_data)
     raw_pixel_data = filter_obj.re_filter()
-    #print(len(filtered_pixel_data))
-    #print(len(raw_pixel_data))
-    #print(width, height, bytes_per_pixel)
+
     plt.axis("off")
     plt.imshow(np.array(raw_pixel_data).reshape(height, width, bytes_per_pixel))
     plt.show()

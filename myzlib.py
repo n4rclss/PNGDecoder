@@ -107,7 +107,6 @@ def preprocessing(r):
             repeat_length = r.read_bits(7) + 11
             bl.extend(0 for _ in range(repeat_length))
 
-    #print('bl', bl)
     # Build trees:
     literal_length_tree = build_tree(bl[:HLIT], range(286))
     distance_tree = build_tree(bl[HLIT:], range(30))
@@ -150,7 +149,6 @@ def decode_symbol(r, huffman_tree):
             node = node.right
         else:
             node = node.left
-    #print("symbol:", node.symbol)
     return node.symbol
 
 
@@ -203,7 +201,6 @@ def inflate_block(r, output, literal_length_tree, distance_tree):
             distance = SMALLEST_DISTANCE[distance] + r.read_bits(EXTRA_BITS_DISTANCE[distance])
             for i in range(length):
                 output.append(output[-distance])
-                #print("out", output)
 
 
 def inflate(r):
@@ -246,9 +243,3 @@ def decompress(input):
     ADLER32 = r.read_bytes(4)   # Adler-32 checksum: Checksum value of uncompressed data (excluding dictionary data)
     return bytes(output)
 
-
-if __name__ == '__main__':
-    import zlib
-    x = zlib.compress(b'the most expensive tour trip')
-    y = b'x\x9c\xed\xd61\n\x800\x0cF\xe1\'dhO\xa1\xf7?U\x04\x8f!\xc4\xdd\xc5Ex\x1dR\xe8P(\xfc\x1fM(\xd9\x8a\x010^{~\x9c\xff\xba3\x83\x1du\x05G\x03\xca\x06\xa8\xf9\rX\xa0\x07N5\x1e"}\x80\\\x82T\xe3\x1b\xb0B\x0f\\\xdc.\x00y \x88\x92\xff\xe2\xa0\x016\xa0{@\x07\x94<\x10\x04\xd9\x00\x19P6@\x7f\x01\x1b\xf0\x00R \x1a\x9c'
-    print(decompress(y)) # b'Hello World!'
