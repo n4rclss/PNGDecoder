@@ -1,19 +1,49 @@
 class BitReader:
+    """
+    A class to read bits and bytes from a memory buffer.
+
+    Attributes:
+        mem (bytes): The memory buffer containing the data to read.
+        byte_pos (int): The current byte position in the buffer (byte index).
+        byte (int): The current byte being read.
+        bit_pos (int): The current bit position of the current byte (bit index).
+
+    """
+
     def __init__(self, mem):
+        """
+        Initialize the BitReader object.
+
+        Args:
+            mem (bytes): The memory buffer containing the data to read.
+
+        """
         self.mem = mem
         self.byte_pos = 0
         self.byte = 0
         self.bit_pos = 0
 
     def read_byte(self):
-        # Read bytes from left -> right
+        """
+        Read a byte from the memory buffer (from left -> right).
+
+        Returns:
+            (int): The byte read from the buffer.
+
+        """
         self.bit_pos = 0
         b = self.mem[self.byte_pos]
         self.byte_pos += 1
         return b
     
     def read_bit(self):
-        # Read bit from right -> left
+        """
+        Read a bit from the memory buffer (from right->left).
+
+        Returns:
+            (int): The bit read from the buffer.
+
+        """
         if self.bit_pos <= 0:
             self.byte = self.read_byte()
             self.bit_pos = 8
@@ -23,31 +53,83 @@ class BitReader:
         return bit
     
     def read_bits(self, N):
-        # Read a N number of bits from right -> left and reverse theirs order
+        """
+        Read a specified number of bits from the memory buffer (from right->left).
+
+        Args:
+            N (int): The number of bits to read.
+
+        Returns:
+            (int): The bits read from the buffer.
+
+        """
         bits = 0 
         for i in range(N):
             bits |= self.read_bit() << i
         return bits
     
     def read_bytes(self, N):
-        # Read a N number of bytes from left -> right
+        """
+        Read a specified number of bytes from the memory buffer (from left->right).
+
+        Args:
+            N (int): The number of bytes to read.
+
+        Returns:
+            int: The bytes read from the buffer.
+
+        """
         out = 0
         for i in range(out):
             out |= self.read_byte() << (8 * i)
         return out
     
 class Node:
+    """
+    A class representing a node in a Huffman tree.
+
+    Attributes:
+        symbol (str): Symbol (or name) of the node.
+        left (ptr): Pointer to its left node.
+        right (ptr): Pointer to its right node.
+
+    """
     def __init__(self):
+        """
+        Initialize the Node object.
+
+        """
         self.symbol = ''
         self.left = None
         self.right = None
 
 class HuffmanTree:
+    """
+    A class representing a Huffman tree.
+
+    Attributes:
+        root: Root node of the Huffman tree
+
+    """
+
     def __init__(self):
+        """
+        Initialize the HuffmanTree object.
+
+        """
         self.root = Node()
         self.root.symbol = ''
 
     def insert(self, huffman_code, code_len, alphabet):
+        """
+        Insert a symbol into the Huffman tree.
+
+        Args:
+            huffman_code (int): The Huffman code for the symbol.
+            code_len (int): The length of the Huffman code.
+            alphabet (str): The symbol of the node inserted into the tree.
+
+        """
         # Start from root
         node = self.root
         # Read bits in huffman code from left -> right 
@@ -71,6 +153,15 @@ class HuffmanTree:
 CLEN_CODE_ORDER = [16, 17, 18, 0, 8, 7, 9, 6, 10, 5, 11, 4, 12, 3, 13, 2, 14, 1, 15]
 
 def preprocessing(r):
+    """
+    Preprocess information data before compressed data in a block to build Huffman tree.
+
+    Args:
+        r (BitReader): The BitReader object containing the compressed data.
+
+    Returns:
+        (tuple): A tuple containing the Huffman trees for literal/length and distance alphabets.
+    """
     # Preprocessing info data appeared before compressed data in a block to build Huffman tree => retrieve Huffman code (symbol) for each character
 
     # Code lengths for the literal/length alphabet, encoded using the code length Huffman code
@@ -114,6 +205,18 @@ def preprocessing(r):
 
 
 def build_tree(bl, alphabet):
+    """
+    Build a Huffman tree from the given bit lengths and alphabet.
+
+    Args:
+        bl (list): The list of bit lengths for each symbol.
+        alphabet (list): The list of symbols in the alphabet.
+
+    Returns:
+        tree (HuffmanTree): The constructed Huffman tree.
+
+    """
+
     # bl: bit lens of each symbol of each alphabet (in alphabetically order)
     # Step 1: Create bl_count[i] as the number of the bit len of i exists in bl
     # Step 2: Find the numerical value of the smallest code for each bit len
@@ -141,7 +244,17 @@ def build_tree(bl, alphabet):
 
 
 def decode_symbol(r, huffman_tree):
-    # Decode compressed data to symbol using Huffman tree
+    """
+    Decode compressed data to symbol using given uffman tree
+
+    Args:
+        r (BitReader): The BitReader object containing the compressed data.
+        huffman_tree (HuffmanTree): The Huffman tree to use for decoding.
+
+    Returns:
+        str: The decoded symbol.
+
+    """
     node = huffman_tree.root
     while node.left or node.right:
         bit = r.read_bit()
@@ -153,12 +266,28 @@ def decode_symbol(r, huffman_tree):
 
 
 def inflate_block_no_compression(r, output):
+    """
+    Inflate a block of compressed data by copying the original compressed data block as this is a no compression method.
+
+    Args:
+        r (BitReader): The BitReader object containing the compressed data.
+        output (list): The list to store the inflated data.
+
+    """
     LEN = r.read_bytes(2)
     NLEN = r.read_bytes(2)
     output.append(r.read_bytes(LEN))
 
 
 def inflate_block_fixed_huffman_code(r, output):
+    """
+    Build Huffman Tree and inflate a block of compressed data using fixed Huffman codes.
+
+    Args:
+        r (BitReader): The BitReader object containing the compressed data.
+        output (list): The list to store the inflated data.
+
+    """
     # Build literal/length tree
     bl = []
     for i in range(288):
@@ -178,6 +307,14 @@ def inflate_block_fixed_huffman_code(r, output):
 
 
 def inflate_block_dynamic_huffman_code(r, output):
+    """
+    Build Huffman Tree and inflate a block of compressed data using dynamic Huffman codes.
+
+    Args:
+        r (BitReader): The BitReader object containing the compressed data.
+        output (list): The list to store the inflated data.
+
+    """
     literal_length_tree, distance_tree = preprocessing(r)
     inflate_block(r, output, literal_length_tree, distance_tree)
 
@@ -188,6 +325,16 @@ EXTRA_BITS_DISTANCE = [0, 0, 0, 0, 1, 1, 2, 2, 3, 3, 4, 4, 5, 5, 6, 6, 7, 7, 8, 
 SMALLEST_DISTANCE = [1, 2, 3, 4, 5, 7, 9, 13, 17, 25, 33, 49, 65, 97, 129, 193, 257, 385, 513, 769, 1025, 1537, 2049, 3073, 4097, 6145, 8193, 12289, 16385, 24577]
 
 def inflate_block(r, output, literal_length_tree, distance_tree):
+    """
+    Inflate a block of compressed data.
+
+    Args:
+        r (BitReader): The BitReader object containing the compressed data.
+        output (list): The list to store the decompressed data.
+        literal_length_tree (HuffmanTree): The Huffman tree for literal/length codes.
+        distance_tree (HuffmanTree): The Huffman tree for distance codes.
+
+    """
     while True:
         symbol = decode_symbol(r, literal_length_tree)
         if symbol <= 255:
@@ -204,6 +351,16 @@ def inflate_block(r, output, literal_length_tree, distance_tree):
 
 
 def inflate(r):
+    """
+    Inflate the compressed data using the DEFLATE algorithm.
+
+    Args:
+        r (BitReader): The BitReader object containing the compressed data.
+
+    Returns:
+        output (list): The decompressed data.
+
+    """
     output = []
     while True:
         BFINAL = r.read_bit()
@@ -222,6 +379,16 @@ def inflate(r):
 
 
 def decompress(input):
+    """
+    Decompress the input data using the DEFLATE/INFLATE algorithm.
+
+    Args:
+        input (bytes): The compressed input data.
+
+    Returns:
+        (bytes): The decompressed data.
+
+    """
     # Zlib Decompress
     r = BitReader(input)
     CMF = r.read_byte()
